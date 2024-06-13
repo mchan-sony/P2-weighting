@@ -68,7 +68,7 @@ def main():
                 out_path,
                 nrow=1,
                 normalize=True,
-                range=(-1, 1),
+                value_range=(-1, 1),
             )
         # saving npz
         sample = ((sample + 1) * 127.5).clamp(0, 255).to(th.uint8)
@@ -85,6 +85,7 @@ def main():
             dist.all_gather(gathered_labels, classes)
             all_labels.extend([labels.cpu().numpy() for labels in gathered_labels])
         logger.log(f"created {len(all_images) * args.batch_size} samples")
+        count += 1
 
     arr = np.concatenate(all_images, axis=0)
     arr = arr[: args.num_samples]
@@ -107,7 +108,7 @@ def main():
 def create_argparser():
     defaults = dict(
         clip_denoised=True,
-        num_samples=10000,
+        num_samples=16,
         batch_size=16,
         use_ddim=False,
         model_path="",
