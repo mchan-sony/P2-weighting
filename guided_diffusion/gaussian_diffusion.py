@@ -11,8 +11,8 @@ import math
 import numpy as np
 import torch as th
 
+from .losses import discretized_gaussian_log_likelihood, normal_kl
 from .nn import mean_flat
-from .losses import normal_kl, discretized_gaussian_log_likelihood
 
 
 def get_named_beta_schedule(schedule_name, num_diffusion_timesteps):
@@ -169,6 +169,7 @@ class GaussianDiffusion:
             * np.sqrt(alphas)
             / (1.0 - self.alphas_cumprod)
         )
+        self.logvar = np.log(np.maximum(self.posterior_variance, 1e-20))
 
         # P2 weighting
         self.p2_gamma = p2_gamma
@@ -583,7 +584,7 @@ class GaussianDiffusion:
         noise = th.randn_like(x)
         mean_pred = (
             out["pred_xstart"] * th.sqrt(alpha_bar_prev)
-            + th.sqrt(1 - alpha_bar_prev - sigma ** 2) * eps
+            + th.sqrt(1 - alpha_bar_prev - sigma**2) * eps
         )
         nonzero_mask = (
             (t != 0).float().view(-1, *([1] * (len(x.shape) - 1)))
@@ -662,6 +663,56 @@ class GaussianDiffusion:
         ):
             final = sample
         return final["sample"]
+
+    def generate(self, model, z, timesteps, device=None):
+        assert timesteps <= self.num_timesteps, "timesteps must be <= num_timesteps"
+        with th.no_grad():
+            xT = z[0].to(device)
+
+            xt = xT
+            indices = list(range(timesteps))[::-1]
+            for i, j in enumerate(indices):
+                t = th.tensor([j] * xT.shape[0], device=device)
+
+                # Run the model on xt+1 and estimate the mean/variance
+                out = self.p_mean_variance(
+                    model,
+                    xt,
+                    t,
+                )
+                noise = th.randn_like(xT) if i == 0 else z[i]
+                noise = noise.to(device)
+                xt = out["mean"] + th.exp(0.5 * out["log_variance"]) * noise
+        return xt
+
+    def encode(self, model, image, timesteps, device=None):
+        assert timesteps <= self.num_timesteps, "timesteps must be <= num_timesteps"
+        with th.no_grad():
+            x0 = image.to(device)
+            # Get xT and append to z
+            T = th.tensor([timesteps - 1] * x0.shape[0], device=device)
+            xT = self.q_sample(x0, T)
+            z = [xT]
+
+            xt = xT
+            indices = list(range(1, self.num_timesteps))[::-1]  # [999, ..., 1]
+            for i in indices:
+                # Compute xt+1
+                t = th.tensor([i] * x0.shape[0], device=device)
+                mean, var, _ = self.q_posterior_mean_variance(x0, xt, t)
+                xt_next = mean + th.sqrt(var) * th.randn_like(x0)
+                # Run the model on xt+1 and estimate the noise
+                out = self.p_mean_variance(
+                    model,
+                    xt,
+                    t,
+                )
+                eps = (xt_next - out["mean"]) / th.exp(0.5 * out["log_variance"])
+                # Append the estimated noise to z
+                z.append(eps)
+
+                xt = xt_next
+        return z
 
     def ddim_sample_loop_progressive(
         self,
@@ -815,7 +866,9 @@ class GaussianDiffusion:
             assert model_output.shape == target.shape == x_start.shape
 
             # P2 weighting
-            weight = _extract_into_tensor(1 / (self.p2_k + self.snr)**self.p2_gamma, t, target.shape)
+            weight = _extract_into_tensor(
+                1 / (self.p2_k + self.snr) ** self.p2_gamma, t, target.shape
+            )
             terms["mse"] = mean_flat(weight * (target - model_output) ** 2)
 
             if "vb" in terms:

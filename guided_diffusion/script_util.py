@@ -13,7 +13,7 @@ def diffusion_defaults():
     Defaults for image and classifier training.
     """
     return dict(
-        learn_sigma=False,
+        learn_sigma=True,
         diffusion_steps=1000,
         noise_schedule="linear",
         timestep_respacing="",
@@ -45,13 +45,13 @@ def model_and_diffusion_defaults():
     Defaults for image training.
     """
     res = dict(
-        image_size=64,
+        image_size=256,
         num_channels=128,
-        num_res_blocks=2,
+        num_res_blocks=1,
         num_heads=4,
         num_heads_upsample=-1,
-        num_head_channels=-1,
-        attention_resolutions="16,8",
+        num_head_channels=64,
+        attention_resolutions="16",
         channel_mult="",
         dropout=0.0,
         p2_gamma=0,
@@ -59,7 +59,7 @@ def model_and_diffusion_defaults():
         class_cond=False,
         use_checkpoint=False,
         use_scale_shift_norm=True,
-        resblock_updown=False,
+        resblock_updown=True,
         use_fp16=False,
         use_new_attention_order=False,
     )
@@ -138,12 +138,12 @@ def create_model(
     num_channels,
     num_res_blocks,
     channel_mult="",
-    learn_sigma=False,
+    learn_sigma=True,
     class_cond=False,
     use_checkpoint=False,
     attention_resolutions="16",
     num_heads=1,
-    num_head_channels=-1,
+    num_head_channels=64,
     num_heads_upsample=-1,
     use_scale_shift_norm=False,
     dropout=0,
@@ -403,7 +403,7 @@ def create_gaussian_diffusion(
     predict_xstart=False,
     rescale_timesteps=False,
     rescale_learned_sigmas=False,
-    timestep_respacing="",
+    timestep_respacing="250",
     p2_gamma=0,
     p2_k=1,
 ):
