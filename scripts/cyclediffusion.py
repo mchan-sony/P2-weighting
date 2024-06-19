@@ -1,3 +1,4 @@
+import argparse
 import os
 import random
 from copy import deepcopy
@@ -10,8 +11,26 @@ from guided_diffusion.script_util import (create_model_and_diffusion,
                                           model_and_diffusion_defaults)
 from torchvision.utils import make_grid, save_image
 
-SEED = 42
-N = 4
+
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--num_samples", type=int, default=8)
+    parser.add_argument("--timesteps", type=int, default=1000)
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        default="/data/matthew/cycle-diffusion/stargan-v2/data/test/cat/*.png",
+    )
+    parser.add_argument(
+        "--source_ckpt", type=str, default="ckpts/cat_ema_0.9999_050000.pt"
+    )
+    parser.add_argument("--target_ckpt", type=str, default="ckpts/afhq_dog_4m.pt")
+    parser.add_argument("--write_file", type=str, default="cyclediffusion.png")
+
+    args = parser.parse_args()
+    print(args)
+    return args
 
 
 def load_image(path, device):
@@ -23,10 +42,8 @@ def load_image(path, device):
     return img
 
 
-def load_images(device, num_images=4):
-    fnames = glob("/data/matthew/cycle-diffusion/stargan-v2/data/test/cat/*.png")[
-        :num_images
-    ]
+def load_images(dir, device, num_images=4):
+    fnames = glob(dir)[:num_images]
     imgs = []
     for fname in fnames:
         imgs.append(load_image(fname, device))
@@ -35,37 +52,40 @@ def load_images(device, num_images=4):
 
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    np.random.seed(SEED)
-    torch.manual_seed(SEED)
-    random.seed(SEED)
-    os.remove("cyclediffusion.png")
+    args = get_args()
+
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    random.seed(args.seed)
+
+    if os.path.isfile(args.write_file):
+        os.remove(args.write_file)
 
     # Load source model
     source_model, diffusion = create_model_and_diffusion(
         **model_and_diffusion_defaults()
     )
-    source_model.load_state_dict(torch.load("ckpts/cat_ema_0.9999_050000.pt"))
+    source_model.load_state_dict(torch.load(args.source_ckpt))
     source_model = source_model.to(device)
     source_model.eval()
     # Load target model
     target_model = deepcopy(source_model)
-    target_model.load_state_dict(torch.load("ckpts/cat_ema_0.9999_050000.pt"))
+    target_model.load_state_dict(torch.load(args.target_ckpt))
     target_model = target_model.to(device)
     target_model.eval()
 
-    T = 1000
     print("encoding...")
-    imgs = load_images(device, num_images=N)
-    z = diffusion.encode(source_model, imgs, T, device)
+    imgs = load_images(args.data_dir, device, num_images=args.num_samples)
+    z = diffusion.encode(source_model, imgs, args.timesteps, device)
     print("generating...")
-    out = diffusion.generate(target_model, z, T, device)
+    out = diffusion.generate(target_model, z, args.timesteps, device)
 
     save_image(
         make_grid(
             torch.concatenate([imgs, out], dim=0),
             value_range=(-1, 1),
             normalize=True,
-            nrow=N,
+            nrow=args.num_samples,
         ),
-        "cyclediffusion.png",
+        args.write_file,
     )

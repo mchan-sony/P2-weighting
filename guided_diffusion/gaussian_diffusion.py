@@ -667,20 +667,20 @@ class GaussianDiffusion:
     def generate(self, model, z, timesteps, device=None):
         assert timesteps <= self.num_timesteps, "timesteps must be <= num_timesteps"
         with th.no_grad():
-            xT = z[0].to(device)
+            xT = z.pop(0).to(device)
 
             xt = xT
             indices = list(range(timesteps))[::-1]
             for i, j in enumerate(indices):
                 t = th.tensor([j] * xT.shape[0], device=device)
 
-                # Run the model on xt+1 and estimate the mean/variance
+                # Run the model on xt and estimate the mean/variance
                 out = self.p_mean_variance(
                     model,
                     xt,
                     t,
                 )
-                noise = th.randn_like(xT) if i == 0 else z[i]
+                noise = th.randn_like(xT) if j == 0 else z[i]
                 noise = noise.to(device)
                 xt = out["mean"] + th.exp(0.5 * out["log_variance"]) * noise
         return xt
@@ -697,18 +697,18 @@ class GaussianDiffusion:
             xt = xT
             indices = list(range(1, self.num_timesteps))[::-1]  # [999, ..., 1]
             for i in indices:
-                # Compute xt+1
                 t = th.tensor([i] * x0.shape[0], device=device)
+                # Compute xt-1
                 mean, var, _ = self.q_posterior_mean_variance(x0, xt, t)
                 xt_next = mean + th.sqrt(var) * th.randn_like(x0)
-                # Run the model on xt+1 and estimate the noise
+                # Run the model on xt
                 out = self.p_mean_variance(
                     model,
                     xt,
                     t,
                 )
-                eps = (xt_next - out["mean"]) / th.exp(0.5 * out["log_variance"])
                 # Append the estimated noise to z
+                eps = (xt_next - out["mean"]) / th.exp(0.5 * out["log_variance"])
                 z.append(eps)
 
                 xt = xt_next
