@@ -49,7 +49,6 @@ def load_images(dir, device, num_images=4):
         imgs.append(load_image(fname, device))
     return torch.stack(imgs)
 
-
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     args = get_args()
@@ -74,15 +73,20 @@ if __name__ == "__main__":
     target_model = target_model.to(device)
     target_model.eval()
 
+    # Cycle consistency test
     print("encoding...")
     imgs = load_images(args.data_dir, device, num_images=args.num_samples)
-    z = diffusion.encode(source_model, imgs, args.timesteps, device)
-    print("generating...")
-    out = diffusion.generate(target_model, z, args.timesteps, device)
+    source_z = diffusion.encode(source_model, imgs, args.timesteps, device)
+    print("decoding...")
+    target_out = diffusion.decode(target_model, source_z, args.timesteps, device)
+    print("encoding...")
+    target_z = diffusion.encode(target_model, target_out, args.timesteps, device)
+    print('decoding...')
+    source_out = diffusion.decode(source_model, target_z, args.timesteps, device)
 
     save_image(
         make_grid(
-            torch.concatenate([imgs, out], dim=0),
+            torch.concatenate([imgs, target_out, source_out], dim=0),
             value_range=(-1, 1),
             normalize=True,
             nrow=args.num_samples,

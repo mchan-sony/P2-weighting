@@ -664,7 +664,7 @@ class GaussianDiffusion:
             final = sample
         return final["sample"]
 
-    def generate(self, model, z, timesteps, device=None):
+    def decode(self, model, z, timesteps, device=None):
         assert timesteps <= self.num_timesteps, "timesteps must be <= num_timesteps"
         with th.no_grad():
             xT = z.pop(0).to(device)
